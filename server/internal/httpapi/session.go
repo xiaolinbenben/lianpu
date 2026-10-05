@@ -14,41 +14,59 @@ import (
 )
 
 const (
-	adminUsername = "admin"
-	adminPassword = "admin123"
-	sessionCookie = "admin_session"
-	sessionTTL    = 7 * 24 * time.Hour
+	adminCookie = "admin_session"
+	userCookie  = "user_session"
+	sessionTTL  = 7 * 24 * time.Hour
 )
 
-func writeSession(c *gin.Context, key string) {
-	payload := fmt.Sprintf("%s|%d", adminUsername, time.Now().Add(sessionTTL).Unix())
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(sessionCookie, signSession(key, payload), int(sessionTTL.Seconds()), "/", "", false, true)
+func (a app) writeAdminSession(c *gin.Context, id uint) {
+	a.writeCookie(c, adminCookie, fmt.Sprintf("admin|%d|%d", id, time.Now().Add(sessionTTL).Unix()))
 }
 
-func clearSession(c *gin.Context) {
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(sessionCookie, "", -1, "/", "", false, true)
+func (a app) writeUserSession(c *gin.Context, id uint) {
+	a.writeCookie(c, userCookie, fmt.Sprintf("user|%d|%d", id, time.Now().Add(sessionTTL).Unix()))
 }
 
-func currentAdmin(c *gin.Context, key string) (string, bool) {
-	raw, err := c.Cookie(sessionCookie)
+func (a app) clearCookie(c *gin.Context, name string) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(name, "", -1, "/", "", false, true)
+}
+
+func (a app) currentAdminID(c *gin.Context) (uint, bool) {
+	return a.currentID(c, adminCookie, "admin")
+}
+
+func (a app) currentUserID(c *gin.Context) (uint, bool) {
+	return a.currentID(c, userCookie, "user")
+}
+
+func (a app) writeCookie(c *gin.Context, name, payload string) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(name, signSession(a.key, payload), int(sessionTTL.Seconds()), "/", "", false, true)
+}
+
+func (a app) currentID(c *gin.Context, cookieName, kind string) (uint, bool) {
+	raw, err := c.Cookie(cookieName)
 	if err != nil {
-		return "", false
+		return 0, false
 	}
-	payload, ok := openSession(key, raw)
+	payload, ok := openSession(a.key, raw)
 	if !ok {
-		return "", false
+		return 0, false
 	}
-	name, expiryText, found := strings.Cut(payload, "|")
-	if !found || name != adminUsername {
-		return "", false
+	parts := strings.Split(payload, "|")
+	if len(parts) != 3 || parts[0] != kind {
+		return 0, false
 	}
-	expiry, err := strconv.ParseInt(expiryText, 10, 64)
+	id64, err := strconv.ParseUint(parts[1], 10, 64)
+	if err != nil || id64 == 0 {
+		return 0, false
+	}
+	expiry, err := strconv.ParseInt(parts[2], 10, 64)
 	if err != nil || time.Now().Unix() > expiry {
-		return "", false
+		return 0, false
 	}
-	return name, true
+	return uint(id64), true
 }
 
 func signSession(key, payload string) string {

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"fullstack-app-template/server/internal/config"
-	"fullstack-app-template/server/internal/database"
+	"lianpu/server/internal/config"
+	"lianpu/server/internal/database"
 )
 
 func testHandler(t *testing.T) http.Handler {

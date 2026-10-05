@@ -38,7 +38,7 @@ test:
 build: web-build admin-build server-build
 
 docker-build:
-	docker build -t ghcr.io/xiaolinbenben/fullstack-app-template:latest .
+	docker build -t ghcr.io/xiaolinbenben/lianpu:latest .
 
 docker-up:
 	cp -n deploy/.env.example deploy/.env 2>/dev/null || true

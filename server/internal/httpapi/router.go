@@ -7,14 +7,58 @@ import (
 	"path"
 	"strings"
 
-	"fullstack-app-template/server/internal/config"
-	"fullstack-app-template/server/internal/middleware"
-	"fullstack-app-template/server/internal/response"
+	"lianpu/server/internal/config"
+	"lianpu/server/internal/mail"
+	"lianpu/server/internal/middleware"
+	"lianpu/server/internal/rainforest"
+	"lianpu/server/internal/response"
+	"lianpu/server/internal/store"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
+// Deps 是 HTTP 服务的依赖。测试可以换掉 Rainforest 和发信。
+type Deps struct {
+	Config     config.Config
+	DB         *gorm.DB
+	WebFS      fs.FS
+	Rainforest *rainforest.Client
+	Mail       mail.Sender
+}
+
+type app struct {
+	key        string
+	db         *gorm.DB
+	queries    store.Store
+	rainforest *rainforest.Client
+	mail       mail.Sender
+}
+
 func New(cfg config.Config, db *gorm.DB, webFS fs.FS) *gin.Engine {
+	return NewDeps(Deps{
+		Config:     cfg,
+		DB:         db,
+		WebFS:      webFS,
+		Rainforest: rainforest.NewClient(nil),
+		Mail:       mail.SMTPSender{},
+	})
+}
+
+func NewDeps(deps Deps) *gin.Engine {
+	if deps.Rainforest == nil {
+		deps.Rainforest = rainforest.NewClient(nil)
+	}
+	if deps.Mail == nil {
+		deps.Mail = mail.SMTPSender{}
+	}
+	application := app{
+		key:        deps.Config.EncryptionKey,
+		db:         deps.DB,
+		queries:    store.New(deps.DB),
+		rainforest: deps.Rainforest,
+		mail:       deps.Mail,
+	}
 	engine := gin.New()
 	engine.Use(
 		gin.CustomRecovery(func(c *gin.Context, _ any) {
@@ -28,8 +72,9 @@ func New(cfg config.Config, db *gorm.DB, webFS fs.FS) *gin.Engine {
 	engine.GET("/healthz", func(c *gin.Context) {
 		response.OK(c, gin.H{"status": "ok"})
 	})
-	registerWoodfishRoutes(engine, db)
-	registerAdminRoutes(engine, cfg.EncryptionKey)
+	application.registerAuth(engine)
+	application.registerCollections(engine)
+	application.registerAdmin(engine)
 	engine.NoMethod(func(c *gin.Context) {
 		response.Error(c, http.StatusMethodNotAllowed, "请求方法不支持")
 	})
@@ -38,9 +83,8 @@ func New(cfg config.Config, db *gorm.DB, webFS fs.FS) *gin.Engine {
 			response.Error(c, http.StatusNotFound, "接口不存在")
 			return
 		}
-		serveFrontend(c, webFS)
+		serveFrontend(c, deps.WebFS)
 	})
-
 	return engine
 }
 

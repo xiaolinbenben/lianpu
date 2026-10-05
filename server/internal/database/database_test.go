@@ -3,9 +3,9 @@ package database
 import (
 	"testing"
 
-	"fullstack-app-template/server/internal/config"
-	"fullstack-app-template/server/internal/model"
 	"gorm.io/gorm"
+	"lianpu/server/internal/config"
+	"lianpu/server/internal/model"
 )
 
 func openTest(t *testing.T) *gorm.DB {
@@ -59,21 +59,27 @@ func TestMigrateAndReadBack(t *testing.T) {
 		t.Fatalf("max open connections = %d, want 10", sqlDB.Stats().MaxOpenConnections)
 	}
 
-	var row model.Counter
-	if err := db.Where("name = ?", model.WoodfishName).First(&row).Error; err != nil {
+	var setting model.Setting
+	if err := db.Where("key = ?", model.SettingSignupBonus).First(&setting).Error; err != nil {
 		t.Fatal(err)
 	}
-	if row.Count != 0 {
-		t.Fatalf("count = %d, want 0", row.Count)
+	if setting.Value != "10" {
+		t.Fatalf("signup bonus = %q", setting.Value)
 	}
-	if err := db.Model(&row).Update("count", int64(3)).Error; err != nil {
+	var categories int64
+	if err := db.Model(&model.ExportCategory{}).Count(&categories).Error; err != nil {
 		t.Fatal(err)
 	}
-	var got model.Counter
-	if err := db.First(&got, row.ID).Error; err != nil {
+	if categories != 1 {
+		t.Fatalf("categories = %d, want 1", categories)
+	}
+	if err := Migrate(db); err != nil {
 		t.Fatal(err)
 	}
-	if got.Count != 3 {
-		t.Fatalf("count = %d, want 3", got.Count)
+	if err := db.Model(&model.ExportCategory{}).Count(&categories).Error; err != nil {
+		t.Fatal(err)
+	}
+	if categories != 1 {
+		t.Fatalf("categories after second migrate = %d, want 1", categories)
 	}
 }

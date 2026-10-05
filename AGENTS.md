@@ -20,8 +20,9 @@
 - 不得未经明确设计加入 `PATCH`、`PUT`、`DELETE`。
 - 所有 API 返回 `success`、`message`、`data` 三个字段。
 - Handler 不直接拼接 JSON，统一使用 response 包。
-- `server/internal/httpapi/woodfish.go` 是 GORM 业务接口的实现。新接口按模型、store、路由这三层添加，不在 Handler 里写查询。
-- 参观管理端的账号密码写死为 `admin` / `admin123`。没有修改密码的接口。
+- 采集接口按模型、store、路由这三层添加，不在 Handler 里写查询。
+- 管理端账号在首次打开时初始化，填写邮箱和密码。没有修改密码的接口。
+- `GET /api/exports/download` 是文件下载例外，返回 xlsx 字节，不套 JSON 信封。其它接口仍返回 `success`、`message`、`data`。
 
 ## 数据访问
 
@@ -66,7 +67,7 @@
 ```bash
 make test
 make build
-docker build -t fullstack-app-template:local .
+docker build -t lianpu:local .
 ```
 
 前端依赖变更必须提交对应的 `pnpm-lock.yaml`。不要提交 `node_modules`、`package-lock.json`、构建产物、本地 `.env` 或运行数据。

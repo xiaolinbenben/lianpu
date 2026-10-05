@@ -1,4 +1,4 @@
-name: fullstack-app-template
+name: lianpu
 
 services:
   postgres:
@@ -18,7 +18,7 @@ services:
       retries: 20
 
   app:
-    image: ghcr.io/xiaolinbenben/fullstack-app-template:latest
+    image: ghcr.io/xiaolinbenben/lianpu:latest
     restart: unless-stopped
     depends_on:
       postgres:

@@ -7,14 +7,16 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"log"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
-	"fullstack-app-template/server/internal/model"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"lianpu/server/internal/model"
 )
 
 func Open(databaseURL string) (*gorm.DB, error) {
@@ -31,7 +33,11 @@ func Open(databaseURL string) (*gorm.DB, error) {
 		DSN:                  databaseURL,
 		PreferSimpleProtocol: true,
 	}), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Warn),
+		Logger: logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+		}),
 	})
 	if err != nil {
 		return nil, err
@@ -58,11 +64,28 @@ func Migrate(db *gorm.DB) error {
 	if db == nil {
 		return errors.New("数据库未连接")
 	}
-	if err := db.AutoMigrate(&model.Counter{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.Admin{},
+		&model.User{},
+		&model.EmailToken{},
+		&model.CreditAccount{},
+		&model.CreditLedger{},
+		&model.Collection{},
+		&model.Setting{},
+		&model.ExportCategory{},
+		&model.ExportColumn{},
+		&model.Feedback{},
+		&model.ExportFile{},
+	); err != nil {
 		return err
 	}
-	var row model.Counter
-	return db.Where(model.Counter{Name: model.WoodfishName}).Attrs(model.Counter{Count: 0}).FirstOrCreate(&row).Error
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS credit_ledgers_one_refund ON credit_ledgers (collection_id) WHERE reason = 'collect_refund' AND collection_id IS NOT NULL`).Error; err != nil {
+		return err
+	}
+	if err := seedSettings(db); err != nil {
+		return err
+	}
+	return seedGenericCategory(db)
 }
 
 func Close(db *gorm.DB) error {

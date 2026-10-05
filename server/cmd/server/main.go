@@ -10,10 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"fullstack-app-template/server/internal/config"
-	"fullstack-app-template/server/internal/database"
-	"fullstack-app-template/server/internal/httpapi"
-	webassets "fullstack-app-template/server/web"
+	"lianpu/server/internal/collect"
+	"lianpu/server/internal/config"
+	"lianpu/server/internal/database"
+	"lianpu/server/internal/httpapi"
+	webassets "lianpu/server/web"
 )
 
 // listenAddr is fixed at build time. Local builds use 8000; the container
@@ -45,6 +46,10 @@ func main() {
 	}
 	log.Printf("数据库已连接")
 
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
+	go collect.NewWorker(db, cfg.EncryptionKey, nil).Run(workerCtx)
+
 	server := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           httpapi.New(cfg, db, webFS),
@@ -61,6 +66,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
+	workerCancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()

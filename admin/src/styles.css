@@ -44,12 +44,17 @@ body {
   margin-top: 20px;
 }
 
-.woodfish-card {
-  margin-top: 16px;
+.full-width {
+  width: 100%;
 }
 
-.woodfish-count {
-  margin: 0;
+.category-select,
+.source-select {
+  min-width: 180px;
+}
+
+.column-row {
+  margin-bottom: 12px;
 }
 
 .login-page {

@@ -1,16 +1,13 @@
-# Fullstack App Template
+# 链铺
 
-个人使用的全栈开发模板。
-
-在线演示：<https://fullstack-app-template.linzhiqing.dev/>
-
-管理端：<https://fullstack-app-template.linzhiqing.dev/admin/>（账号 `admin`，密码 `admin123`）
+把亚马逊商品链接粘贴进来，采集完成后导出可以拿去 TikTok 上架的表格。
 
 ## 技术栈
 
-- 公共前端：React + Vite + TypeScript + shadcn/ui
+- 公共前端：React + Vite + TypeScript + Tailwind CSS
 - 管理端：React + Vite + Ant Design + `@ant-design/pro-components`
 - 后端：Go + Gin + GORM
+- 采集：Rainforest Product API，每次提交的链接请求一次
 - 部署：单个 Go 应用镜像，由 1Panel 负责域名、HTTPS 证书和反向代理
 - CI/CD：GitHub Actions 构建并推送 GHCR 镜像，再以默认用户 root 登录服务器，更新 `/opt/<仓库名>/deploy`
 
@@ -19,23 +16,26 @@
 ## 项目结构
 
 ```text
-web/                    # 公共前端，访问 /
-admin/                  # 管理端，访问 /admin/
-server/cmd/server/      # Go 程序入口
-server/internal/config/ # 环境变量配置
-server/internal/database/ # GORM 连接和迁移
-server/internal/model/  # GORM 模型
-server/internal/store/  # 查询
-server/internal/httpapi/ # Gin 路由和静态资源
-server/internal/middleware/
-server/internal/response/
-server/web/dist/        # 两套前端的构建产物
-deploy/                 # Compose 和环境变量模板
+web/                         # 公共前端，访问 /
+admin/                       # 管理端，访问 /admin/
+server/cmd/server/           # Go 程序入口，并启动采集 worker
+server/internal/httpapi/     # Gin 路由
+server/internal/store/       # 查询
+server/internal/model/       # GORM 模型
+server/internal/database/    # 连接、迁移和初始数据
+server/internal/collect/     # 进程内采集 worker
+server/internal/rainforest/  # Rainforest 客户端
+server/internal/export/      # xlsx 导出
+server/internal/settings/    # 管理端配置的读取和校验
+server/internal/mail/        # 验证信和重置信
+server/web/dist/             # 两套前端的构建产物
+deploy/                      # Compose 和基础设施环境变量模板
+TODO.md                      # 还没做的事，包括支付
 ```
 
 ## 本地开发
 
-安装依赖（需要 pnpm 11）：
+安装依赖（需要 pnpm 11.9.0）：
 
 ```bash
 corepack enable
@@ -46,6 +46,7 @@ make install
 
 ```bash
 cp deploy/.env.example deploy/.env
+# 把 POSTGRES_PASSWORD 和 ENCRYPTION_KEY 换成字母、数字和连字符
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d postgres
 make server-dev
 ```
@@ -66,52 +67,84 @@ make admin-dev
 - Go 服务：`http://localhost:8000/`
 - 健康检查：`http://localhost:8000/healthz`
 
-两个 Vite 开发服务器都会将 `/api` 和 `/healthz` 通过同源代理转发到 `http://127.0.0.1:8000`，因此本地开发不需要给 Gin 添加 CORS 白名单，也不需要额外的前端 `.env` 文件。启动 Go 服务后，再分别运行 `make web-dev` 和 `make admin-dev` 即可。
+两个 Vite 开发服务器都会将 `/api` 和 `/healthz` 通过同源代理转发到 `http://127.0.0.1:8000`。本地开发不需要给 Gin 添加 CORS 白名单。
 
-## API 规范
+## 第一次使用
 
-当前提供：
+1. 打开管理端。第一次会要求填写管理员邮箱和密码，密码要填两次。保存后即登录。之后不能再初始化，也没有修改密码的接口。
+2. 在「系统配置」里填写 Rainforest API Key、站点地址和 SMTP。这些配置存在数据库里，不写进环境变量。密钥用 `ENCRYPTION_KEY` 加密后保存。
+3. 用户在公共站注册。邮箱验证通过后赠送额度，默认 10。未验证的账号可以登录，但不能采集。
+4. 在工作台粘贴亚马逊商品页链接。每条链接消耗额度，默认 1。采集失败会退回这一次消耗。
+5. 勾选采集成功的记录，选择类目模板，下载 xlsx。表头以导出当时的类目列为准，所以改模板会影响以前采集成功的商品。
 
-```text
-GET  /healthz
-GET  /api/woodfish
-POST /api/woodfish
-POST /api/admin/login
-GET  /api/admin/session
-POST /api/admin/logout
-```
+初始类目是「通用」。官方 TikTok 类目工作簿还没接，见 `TODO.md`。
 
-`GET /api/woodfish` 返回木鱼被敲过的总次数，`POST /api/woodfish` 把次数加一。次数存在 PostgreSQL 里。参观管理端的账号和密码写死为 `admin` / `admin123`，首页上能看到，不能在页面里修改。
+## API
 
-响应统一为：
+只使用 `GET` 和 `POST`。除下载以外，响应都是：
 
 ```json
 {
   "success": true,
   "message": "",
-  "data": {
-    "status": "ok"
-  }
+  "data": {}
 }
 ```
 
-后续业务接口统一放在 `/api/*` 或 `/api/admin/*` 下，只允许使用 `GET` 和 `POST`。不得未经说明加入 `PATCH`、`PUT` 或 `DELETE`。业务接口必须通过后端的统一响应封装返回数据。
+用户：
+
+```text
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/logout
+GET  /api/auth/session
+POST /api/auth/verify
+POST /api/auth/resend-verification
+POST /api/auth/forgot-password
+POST /api/auth/reset-password
+GET  /api/credits
+POST /api/feedback
+```
+
+采集和导出：
+
+```text
+POST /api/collections
+GET  /api/collections
+GET  /api/categories
+POST /api/exports
+GET  /api/exports/download?id=
+```
+
+`GET /api/exports/download` 返回 xlsx 文件，不套 JSON 信封。
+
+管理端：
+
+```text
+GET  /api/admin/setup
+POST /api/admin/setup
+POST /api/admin/login
+GET  /api/admin/session
+POST /api/admin/logout
+GET  /api/admin/overview
+GET  /api/admin/settings
+POST /api/admin/settings
+POST /api/admin/settings/test-rainforest
+POST /api/admin/settings/test-smtp
+GET  /api/admin/users
+POST /api/admin/users/credits
+POST /api/admin/users/verify
+GET  /api/admin/collections
+GET  /api/admin/categories
+POST /api/admin/categories/save
+GET  /api/admin/feedback
+```
+
+采集只接受 Rainforest 文档里的亚马逊商品页。短链 `amzn.to` 先拒绝。请求只带完整商品 URL，不另传 ASIN。
 
 ## 环境变量
 
-唯一的环境变量模板是：
-
-```text
-deploy/.env.example
-```
-
-复制为本地或生产配置：
-
-```bash
-cp deploy/.env.example deploy/.env
-```
-
-`deploy/.env` 被 Git 忽略。PostgreSQL 容器和应用容器都读取这个文件：
+唯一的环境变量模板是 `deploy/.env.example`。复制为 `deploy/.env` 后填写：
 
 ```dotenv
 POSTGRES_USER=app
@@ -122,69 +155,43 @@ ENCRYPTION_KEY=replace-with-a-long-random-key
 # POSTGRES_HOST_PORT=5432
 ```
 
-用户名和数据库名固定为 `app`。这三个值只使用字母、数字和连字符。服务启动时用它们拼出 PostgreSQL 连接串，主机名是 `postgres`，容器端口是 `5432`，`sslmode=disable`，再用 GORM 连接并执行 `AutoMigrate`。数据库时区由 Compose 固定为 `Asia/Shanghai`。本地 Go 监听 `8000`，镜像监听容器端口 `3000`，这两个监听端口不通过环境变量改变。`APP_HOST_PORT` 和 `POSTGRES_HOST_PORT` 只决定映射到宿主机哪个回环端口。`ENCRYPTION_KEY` 仍只读入配置，加密逻辑由具体业务实现。
+用户名和数据库名固定为 `app`。这三个值和 `ENCRYPTION_KEY` 只使用字母、数字和连字符。应用用它们连接主机名 `postgres`、容器端口 `5432`、`sslmode=disable`。数据库时区由 Compose 固定为 `Asia/Shanghai`。本地 Go 监听 `8000`，镜像监听容器端口 `3000`。`APP_HOST_PORT` 和 `POSTGRES_HOST_PORT` 只改变宿主机回环端口。
+
+Rainforest API Key、SMTP、站点地址、注册赠送额度、每条链接消耗、单次提交上限、采集并发和类目列都在管理端配置，不新增环境变量。
 
 ## Docker Compose
 
-`deploy/docker-compose.yml` 同时启动 PostgreSQL 和应用。两个服务都用 `env_file` 读取 `deploy/.env`。端口只绑定宿主机回环地址：应用默认 `127.0.0.1:3000`，PostgreSQL 默认 `127.0.0.1:5432`。应用容器用 `POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DB` 连接主机名 `postgres` 的容器端口 `5432`，不走宿主机映射。
-
 ```bash
 cp deploy/.env.example deploy/.env
-docker compose \
-  --env-file deploy/.env \
-  -f deploy/docker-compose.yml \
-  up -d
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
 ```
 
 本地构建镜像：
 
 ```bash
-docker build -t ghcr.io/xiaolinbenben/fullstack-app-template:latest .
-docker compose \
-  --env-file deploy/.env \
-  -f deploy/docker-compose.yml \
-  up -d
+docker build -t ghcr.io/xiaolinbenben/lianpu:latest .
 ```
 
-打包镜像固定监听容器端口 `3000`。Compose 默认把这个端口映射到宿主机 `127.0.0.1:3000`，适合由 1Panel 反向代理。服务器上 `3000` 或 `5432` 已被占用时，在 `.env` 里去掉对应行的注释并改成空闲端口。应用容器仍然连接 `postgres:5432`。
+端口只绑定 `127.0.0.1`。应用默认 `3000`，PostgreSQL 默认 `5432`。应用容器始终连接 `postgres:5432`。
 
 ## 1Panel 部署
 
-服务器目录为 `/opt/<仓库名>/deploy/`。本仓库对应：
+服务器目录是 `/opt/lianpu/deploy/`。运维只提前放置 `.env`。CI 每次部署写入 `docker-compose.yml`，不覆盖 `.env`。
 
-```text
-/opt/fullstack-app-template/deploy/
-```
+1. 在服务器安装 Docker 和 1Panel。
+2. 创建 `/opt/lianpu/deploy/`，把填好的 `.env` 放进去。
+3. 在 GitHub Environment `production` 配好 `SERVER_HOST`、`SERVER_PASSWORD`、`GHCR_PAT` 后推送 `main`。
+4. 在 1Panel 创建网站、配置 HTTPS，反向代理到 `127.0.0.1:3000`。改过 `APP_HOST_PORT` 时用改后的端口。
+5. 打开 `/admin/`，初始化管理员，再填写 Rainforest 和邮件。
 
-运维在这个目录里工作，并且只提前放置 `.env`。内容按仓库里的 `deploy/.env.example` 填写数据库账号和 `ENCRYPTION_KEY`。`docker-compose.yml` 由 CI 在每次部署时写入该目录并覆盖同名文件。`.env` 保持运维填写的内容。
-
-1. 在服务器安装 Docker 和 1Panel。现在安装 Docker 会自带 Compose。
-2. 创建 `/opt/fullstack-app-template/deploy/`，把填好的 `.env` 放进去。
-3. 在 GitHub Environment `production` 配好下方三个 Secret 后，推送 `main`。工作流会写入 Compose、拉取镜像并在该目录执行 `docker compose up -d`。
-4. 在 1Panel 创建网站、配置 HTTPS 证书，并将反向代理目标设置为 `127.0.0.1:3000`。`.env` 里改过 `APP_HOST_PORT` 时，用改后的端口。
-
-HTTPS 证书只由 1Panel 管理，应用镜像不包含站点证书，也不负责 TLS 终止。PostgreSQL 由同一个 Compose 文件启动。缓存和对象存储不预设。之后查看容器或修改 `.env`，都在 `/opt/fullstack-app-template/deploy/` 里进行。
+登录用户默认为 `root`。要换成其他用户时，在同一个 Environment 设置 Variable `SERVER_USER`。
 
 ## 构建检查
 
 ```bash
 make test
 make build
-docker build -t ghcr.io/xiaolinbenben/fullstack-app-template:latest .
+docker build -t ghcr.io/xiaolinbenben/lianpu:latest .
 ```
 
-## CI/CD
-
-GitHub Actions 会在 Pull Request 和推送时构建两套前端、Go 服务和 Docker 镜像，不运行测试。前端依赖统一使用 pnpm 11.9.0 和 `pnpm-lock.yaml`。推送 `main` 时，工作流把镜像推送到 GHCR，再以默认用户 `root` 登录服务器，把仓库里的 `deploy/docker-compose.yml` 写到 `/opt/<仓库名>/deploy/docker-compose.yml`，用下面的 PAT 登录 `ghcr.io` 后执行 `docker compose pull` 和 `docker compose up -d`。
-
-登录用户默认为 `root`，不放入部署 Secret。要换成其他用户时，在 GitHub Environment `production` 设置 Variable `SERVER_USER`。
-
-生产部署使用 GitHub Environment `production`。部署 Secret 固定为这三个：
-
-| Secret | 内容 |
-| --- | --- |
-| `SERVER_HOST` | 服务器 IP |
-| `SERVER_PASSWORD` | root 密码 |
-| `GHCR_PAT` | 可拉取 GHCR 镜像的 GitHub Personal Access Token |
-
-`GHCR_PAT` 需要 `read:packages`。镜像为私有时，经典 PAT 还需要 `repo`。工作流用仓库所有者的用户名登录 `ghcr.io`，这个 PAT 属于仓库所有者。服务器上的 `.env` 由运维在 `/opt/<仓库名>/deploy/` 维护，CI 只写入 `docker-compose.yml`。
+GitHub Actions 在 Pull Request 和推送时构建两套前端、Go 服务和 Docker 镜像，不运行测试。
