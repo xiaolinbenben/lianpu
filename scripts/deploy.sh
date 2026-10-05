@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本机构建镜像，用默认私钥连到服务器，加载镜像，同步 compose，再启动。
+# 在这台 Mac 上构建 linux/amd64 镜像，用默认私钥传到普通 Linux 服务器后启动。
 # 不覆盖服务器上的 /opt/lianpu/deploy/.env。
 set -euo pipefail
 
@@ -9,6 +9,8 @@ user="root"
 dest="/opt/lianpu/deploy"
 key="${HOME}/.ssh/id_ed25519"
 image="lianpu:latest"
+postgres_image="postgres:18-alpine"
+platform="linux/amd64"
 
 if [[ ! -f "$key" ]]; then
   echo "缺少默认私钥 ${key}" >&2
@@ -24,6 +26,11 @@ ssh_opts=(
 )
 target="${user}@${host}"
 
+transfer_image() {
+  echo "传输镜像 $1"
+  docker save "$1" | gzip | ssh "${ssh_opts[@]}" "$target" "bash -c 'set -o pipefail; gunzip | docker load'"
+}
+
 echo "连接 ${target}"
 if ! ssh "${ssh_opts[@]}" "$target" "mkdir -p '${dest}'"; then
   echo "无法登录 ${target}。请把 ${key}.pub 放进该用户的 authorized_keys" >&2
@@ -38,21 +45,15 @@ if ! ssh "${ssh_opts[@]}" "$target" "command -v docker >/dev/null && docker comp
   exit 1
 fi
 
-remote_arch="$(ssh "${ssh_opts[@]}" "$target" "uname -m")"
-case "$remote_arch" in
-  x86_64) platform="linux/amd64" ;;
-  aarch64 | arm64) platform="linux/arm64" ;;
-  *)
-    echo "服务器架构无法构建: ${remote_arch}" >&2
-    exit 1
-    ;;
-esac
-
 echo "构建镜像 ${image} (${platform})"
 docker build --platform "$platform" -t "$image" "$root"
+transfer_image "$image"
 
-echo "传输镜像"
-docker save "$image" | gzip | ssh "${ssh_opts[@]}" "$target" "bash -c 'set -o pipefail; gunzip | docker load'"
+if ! ssh "${ssh_opts[@]}" "$target" "docker image inspect '${postgres_image}' >/dev/null 2>&1"; then
+  echo "本机拉取 ${postgres_image} (${platform})"
+  docker pull --platform "$platform" "$postgres_image"
+  transfer_image "$postgres_image"
+fi
 
 echo "传输 compose 文件"
 scp "${ssh_opts[@]}" \

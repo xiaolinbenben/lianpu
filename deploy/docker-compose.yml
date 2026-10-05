@@ -3,6 +3,7 @@ name: lianpu
 services:
   postgres:
     image: postgres:18-alpine
+    pull_policy: never
     restart: unless-stopped
     env_file:
       - .env

@@ -182,7 +182,7 @@ docker build -t lianpu:latest .
 1. 在服务器安装 Docker 和 1Panel。
 2. 创建 `/opt/lianpu/deploy/`，把填好的 `.env` 放进去。
 3. 把本机 `~/.ssh/id_ed25519.pub` 写进服务器 `root` 的 `authorized_keys`。
-4. 在本机执行 `make deploy`。脚本会构建 `lianpu:latest`，传到 `root@103.236.57.34`，写入 compose 文件，然后启动服务。
+4. 在本机执行 `make deploy`。脚本会构建 `lianpu:latest`，传到 `root@103.236.57.34`，写入 compose 文件，然后启动服务。服务器上没有 PostgreSQL 镜像时，从本机传过去，不在服务器上拉取。
 5. 在 1Panel 创建网站、配置 HTTPS，反向代理到 `127.0.0.1:3000`。改过 `APP_HOST_PORT` 时用改后的端口。
 6. 打开 `/admin/`，初始化管理员，再填写 Rainforest 和邮件。
 
