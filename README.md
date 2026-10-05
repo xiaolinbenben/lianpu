@@ -9,7 +9,7 @@
 - 后端：Go + Gin + GORM
 - 采集：Rainforest Product API，每次提交的链接请求一次
 - 部署：单个 Go 应用镜像，由 1Panel 负责域名、HTTPS 证书和反向代理
-- CI/CD：GitHub Actions 构建并推送 GHCR 镜像，再以默认用户 root 登录服务器，更新 `/opt/<仓库名>/deploy`
+- 部署：`make deploy` 在本机构建镜像，用默认私钥 SSH 传到服务器，再启动 `/opt/lianpu/deploy`
 
 开发时前后端分开运行，部署时用 `go:embed` 合成一个二进制和一个应用镜像。数据库使用 PostgreSQL，和 Go 应用写在同一个 `deploy/docker-compose.yml` 里。缓存和对象存储不预设。
 
@@ -30,6 +30,7 @@ server/internal/settings/    # 管理端配置的读取和校验
 server/internal/mail/        # 验证信和重置信
 server/web/dist/             # 两套前端的构建产物
 deploy/                      # Compose 和基础设施环境变量模板
+scripts/deploy.sh            # 本机构建镜像并 SSH 部署
 TODO.md                      # 还没做的事，包括支付
 ```
 
@@ -169,29 +170,26 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
 本地构建镜像：
 
 ```bash
-docker build -t ghcr.io/xiaolinbenben/lianpu:latest .
+docker build -t lianpu:latest .
 ```
 
 端口只绑定 `127.0.0.1`。应用默认 `3000`，PostgreSQL 默认 `5432`。应用容器始终连接 `postgres:5432`。
 
-## 1Panel 部署
+## 部署
 
-服务器目录是 `/opt/lianpu/deploy/`。运维只提前放置 `.env`。CI 每次部署写入 `docker-compose.yml`，不覆盖 `.env`。
+服务器目录是 `/opt/lianpu/deploy/`。这个目录和项目里的 `deploy/` 对应，其中的 `.env` 只放在服务器上，部署不会覆盖它。
 
 1. 在服务器安装 Docker 和 1Panel。
 2. 创建 `/opt/lianpu/deploy/`，把填好的 `.env` 放进去。
-3. 在 GitHub Environment `production` 配好 `SERVER_HOST`、`SERVER_PASSWORD`、`GHCR_PAT` 后推送 `main`。
-4. 在 1Panel 创建网站、配置 HTTPS，反向代理到 `127.0.0.1:3000`。改过 `APP_HOST_PORT` 时用改后的端口。
-5. 打开 `/admin/`，初始化管理员，再填写 Rainforest 和邮件。
-
-登录用户默认为 `root`。要换成其他用户时，在同一个 Environment 设置 Variable `SERVER_USER`。
+3. 把本机 `~/.ssh/id_ed25519.pub` 写进服务器 `root` 的 `authorized_keys`。
+4. 在本机执行 `make deploy`。脚本会构建 `lianpu:latest`，传到 `root@103.236.57.34`，写入 compose 文件，然后启动服务。
+5. 在 1Panel 创建网站、配置 HTTPS，反向代理到 `127.0.0.1:3000`。改过 `APP_HOST_PORT` 时用改后的端口。
+6. 打开 `/admin/`，初始化管理员，再填写 Rainforest 和邮件。
 
 ## 构建检查
 
 ```bash
 make test
 make build
-docker build -t ghcr.io/xiaolinbenben/lianpu:latest .
+docker build -t lianpu:latest .
 ```
-
-GitHub Actions 在 Pull Request 和推送时构建两套前端、Go 服务和 Docker 镜像，不运行测试。

@@ -55,8 +55,8 @@
 - Vite 本地开发必须通过 `server.proxy` 将 `/api` 和 `/healthz` 转发到 `http://127.0.0.1:8000`；不要用 CORS 配置替代开发代理。
 - HTTPS 证书由 1Panel 管理，不放入仓库或应用镜像。
 - 只使用 `deploy/docker-compose.yml`。它同时编排应用和 PostgreSQL。宿主机端口只绑定 `127.0.0.1`。应用容器通过本项目网络连接服务名 `postgres` 的容器端口 `5432`。
-- 服务器目录是 `/opt/<仓库名>/deploy/`。运维只提前放置 `.env`。CI 每次部署写入 `docker-compose.yml`，不覆盖 `.env`。
-- 生产部署使用 GitHub Environment `production`。Secret 只有 `SERVER_HOST`、`SERVER_PASSWORD` 和 `GHCR_PAT`。登录用户默认为 `root`；要换成其他用户时设置 Variable `SERVER_USER`。`GHCR_PAT` 用于在服务器上登录 `ghcr.io` 并拉取镜像，用户名用仓库所有者。
+- 服务器目录是 `/opt/lianpu/deploy/`。服务器上只提前放置 `.env`。`make deploy` 用本机默认私钥 `~/.ssh/id_ed25519` 以 root 连接 `103.236.57.34`。脚本在本机构建镜像并传入服务器，再写入 `docker-compose.yml`，不覆盖 `.env`，然后启动服务。
+- 不使用 GitHub Actions，也不推送镜像仓库。应用镜像标签是 `lianpu:latest`。
 - 应用镜像里不包含数据库。缓存和对象存储不预设。
 - 1Panel 只负责域名、HTTPS 和反向代理。反向代理目标是 `127.0.0.1` 加上应用的宿主机端口，默认 `3000`。
 

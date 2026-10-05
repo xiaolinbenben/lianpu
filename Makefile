@@ -1,4 +1,4 @@
-.PHONY: install web-install admin-install web-dev admin-dev server-dev web-build admin-build server-build test build docker-build docker-up
+.PHONY: install web-install admin-install web-dev admin-dev server-dev web-build admin-build server-build test build docker-build docker-up deploy
 
 # 只给本机的 server-dev 和 test 使用。三个变量已在环境里时直接使用，否则读 deploy/.env。
 # 本次进程的主机名用 127.0.0.1，容器里仍是 postgres。
@@ -38,8 +38,11 @@ test:
 build: web-build admin-build server-build
 
 docker-build:
-	docker build -t ghcr.io/xiaolinbenben/lianpu:latest .
+	docker build -t lianpu:latest .
 
 docker-up:
 	cp -n deploy/.env.example deploy/.env 2>/dev/null || true
 	docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
+
+deploy:
+	./scripts/deploy.sh

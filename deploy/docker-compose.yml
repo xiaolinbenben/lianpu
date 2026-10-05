@@ -18,7 +18,8 @@ services:
       retries: 20
 
   app:
-    image: ghcr.io/xiaolinbenben/lianpu:latest
+    image: lianpu:latest
+    pull_policy: never
     restart: unless-stopped
     depends_on:
       postgres:
