@@ -115,9 +115,14 @@ GET  /api/collections
 GET  /api/categories
 POST /api/exports
 GET  /api/exports/download?id=
+POST /api/listings/fill
 ```
 
-`GET /api/exports/download` 返回 xlsx 文件，不套 JSON 信封。
+`GET /api/exports/download` 返回 xlsx 文件，不套 JSON 信封。`POST /api/listings/fill` 把已采集商品整理成插件往卖家中心页面里填的字段。
+
+## 在站斧里上架
+
+在站斧的 TikTok 店铺环境里用开发者模式加载 `extension/`。插件登录链铺后，在卖家中心的添加商品页右侧出现。当前只测试两步：点「填写标题」写入商品名称，点「上传主图」把第一张图放进页面的上传框。不点「另存为草稿」。店铺 Cookie 不离开这个窗口。
 
 管理端：
 

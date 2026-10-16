@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "链铺上架",
+  "version": "0.3.54",
+  "description": "在站斧的 TikTok 店铺窗口里，把采集商品填进添加商品页并点另存为草稿。不读取、不上传店铺 Cookie。",
+  "permissions": ["storage", "scripting", "activeTab"],
+  "host_permissions": [
+    "https://seller.us.tiktokshopglobalselling.com/*",
+    "https://seller-us.tiktok.com/*",
+    "https://seller-us-accounts.tiktok.com/*",
+    "https://seller.tiktokglobalshop.com/*",
+    "https://seller.tiktokshopglobalselling.com/*",
+    "https://www.tiktokshopglobalselling.com/*",
+    "https://seller.tiktok.com/*"
+  ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "链铺上架",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://seller.us.tiktokshopglobalselling.com/*",
+        "https://seller-us.tiktok.com/*",
+        "https://seller-us-accounts.tiktok.com/*",
+        "https://seller.tiktokglobalshop.com/*",
+        "https://seller.tiktokshopglobalselling.com/*",
+        "https://www.tiktokshopglobalselling.com/*",
+        "https://seller.tiktok.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

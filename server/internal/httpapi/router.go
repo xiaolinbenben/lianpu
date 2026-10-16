@@ -74,6 +74,8 @@ func NewDeps(deps Deps) *gin.Engine {
 	})
 	application.registerAuth(engine)
 	application.registerCollections(engine)
+	application.registerListingFill(engine)
+	application.registerSourceProducts(engine)
 	application.registerAdmin(engine)
 	engine.NoMethod(func(c *gin.Context) {
 		response.Error(c, http.StatusMethodNotAllowed, "请求方法不支持")

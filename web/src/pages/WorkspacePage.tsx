@@ -1,11 +1,40 @@
-import { FormEvent, useEffect, useState } from "react";
-import { Category, Collection, Session, createExport, downloadExport, fetchCategories, fetchCollections, fetchSession, logout, resendVerification, sendFeedback, submitLinks } from "../lib/api";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { Category, Collection, Session, SourceImportItem, VariantPlan, createExport, downloadExport, fetchCategories, fetchCollections, fetchSession, fetchVariantPlan, importSourceSheet, logout, resendVerification, sendFeedback, submitLinks } from "../lib/api";
 
 const statusText: Record<Collection["status"], string> = {
   collecting: "采集中",
   succeeded: "已完成",
   failed: "失败",
 };
+
+type SheetSummary = {
+  id: number;
+  externalProductId: string;
+  attributes: { name: string; valueCount: number }[];
+  skuCount: number;
+  price?: string;
+  stock?: number;
+};
+
+function summaryFromImport(item: SourceImportItem): SheetSummary {
+  return {
+    id: item.id,
+    externalProductId: item.external_product_id,
+    attributes: item.attributes.map((attr) => ({ name: attr.name, valueCount: attr.value_count })),
+    skuCount: item.sku_count,
+  };
+}
+
+function summaryFromPlan(plan: VariantPlan): SheetSummary {
+  return {
+    id: plan.id,
+    externalProductId: plan.external_product_id,
+    attributes: plan.attributes.map((attr) => ({ name: attr.name, valueCount: attr.values.length })),
+    skuCount: plan.skus.length,
+    price: plan.uniform?.price,
+    stock: plan.uniform?.stock,
+  };
+}
 
 export default function WorkspacePage() {
   const [session, setSession] = useState<Session | null>(null);
@@ -20,6 +49,10 @@ export default function WorkspacePage() {
   const [submitting, setSubmitting] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+  const [sheetFile, setSheetFile] = useState<File | null>(null);
+  const [sheets, setSheets] = useState<SheetSummary[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = async (nextPage = 1) => {
     const [current, collections, categoryList] = await Promise.all([fetchSession(), fetchCollections(nextPage), fetchCategories()]);
@@ -35,6 +68,12 @@ export default function WorkspacePage() {
     load().catch(() => {
       window.location.assign("/login");
     });
+    fetchVariantPlan()
+      .then((result) => setSheets([summaryFromPlan(result.data)]))
+      .catch((caught) => {
+        const message = caught instanceof Error ? caught.message : "";
+        if (message !== "还没有导入商品表") setError(message || "上架表格读取失败");
+      });
   }, []);
 
   useEffect(() => {
@@ -64,6 +103,41 @@ export default function WorkspacePage() {
       setError(caught instanceof Error ? caught.message : "提交失败");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const onUploadSheet = async (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    const file = sheetFile;
+    if (!file) {
+      setError("请选择 xlsx 表格");
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      setError("请上传 xlsx 表格");
+      return;
+    }
+    setUploading(true);
+    try {
+      const result = await importSourceSheet(file);
+      let next = result.data.items.map(summaryFromImport);
+      try {
+        const plan = await fetchVariantPlan();
+        const current = summaryFromPlan(plan.data);
+        next = next.map((item) => (item.id === current.id ? current : item));
+      } catch {
+        // 导入结果已经够显示。价格读不到时仍保留维度和 SKU 数。
+      }
+      setSheets(next);
+      setSheetFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+      setNotice("表格已上传。插件会使用最近一份。");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "上传失败");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -107,7 +181,11 @@ export default function WorkspacePage() {
           </div>
         </div>
       </header>
-      <div className="mx-auto grid max-w-6xl gap-5 px-4 py-6 sm:px-6 lg:grid-cols-[320px_1fr]">
+      <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6">
+        {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+        {notice && <p className="mb-4 text-sm text-slate-600">{notice}</p>}
+      </div>
+      <div className="mx-auto grid max-w-6xl gap-5 px-4 pb-6 sm:px-6 lg:grid-cols-[320px_1fr]">
         <section className="space-y-5">
           {!session.verified && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
@@ -117,6 +195,34 @@ export default function WorkspacePage() {
               </button>
             </div>
           )}
+          <form className="rounded-xl border border-slate-200 bg-white p-4" onSubmit={(event) => void onUploadSheet(event)}>
+            <h2 className="font-semibold">上架表格</h2>
+            <p className="mt-1 text-sm text-slate-500">上传 TikTok 商品表。插件会拉取最近一份，写入店铺里的添加变体。</p>
+            <input
+              ref={fileRef}
+              className="mt-3 block w-full text-sm"
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              aria-label="选择上架表格"
+              onChange={(event) => setSheetFile(event.target.files?.[0] ?? null)}
+            />
+            <button className="mt-3 w-full rounded-md bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50" disabled={uploading} type="submit">
+              {uploading ? "上传中…" : "上传表格"}
+            </button>
+            {sheets.length === 0 && <p className="mt-3 text-sm text-slate-400">还没有上传。</p>}
+            {sheets.map((item, index) => (
+              <div key={item.id} className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-sm">
+                <div className="font-medium">产品 {item.externalProductId}</div>
+                <div className="mt-1 text-slate-600">
+                  {item.attributes.map((attr) => `${attr.name} ${attr.valueCount} 个值`).join("，")}
+                  {item.attributes.length > 0 ? "，" : ""}
+                  {item.skuCount} 个 SKU
+                </div>
+                {item.price != null && item.stock != null && <div className="mt-1 text-slate-600">零售价 {item.price}，库存 {item.stock}</div>}
+                {index === sheets.length - 1 && <div className="mt-1 text-slate-500">插件使用这一份。</div>}
+              </div>
+            ))}
+          </form>
           <form className="rounded-xl border border-slate-200 bg-white p-4" onSubmit={(event) => void onSubmit(event)}>
             <h1 className="font-semibold">采集商品</h1>
             <p className="mt-1 text-sm text-slate-500">一行一条亚马逊商品链接。</p>
@@ -143,8 +249,6 @@ export default function WorkspacePage() {
               </button>
             </div>
           </div>
-          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-          {notice && <p className="mt-3 text-sm text-slate-600">{notice}</p>}
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead className="text-slate-500">

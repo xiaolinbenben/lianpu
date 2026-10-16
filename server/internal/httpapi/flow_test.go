@@ -170,6 +170,23 @@ func TestAdminSetupAndCollectionFlow(t *testing.T) {
 	if len(list.Items) != 1 || list.Items[0].Status != "succeeded" || list.Items[0].Title != "Blue Mug" {
 		t.Fatalf("list = %+v body %s", list, listed.Body.String())
 	}
+	filled := request(handler, http.MethodPost, "/api/listings/fill", `{"collection_ids":[`+strconv.FormatUint(uint64(list.Items[0].ID), 10)+`]}`, userCookie)
+	if filled.Code != http.StatusOK {
+		t.Fatalf("fill = %d %s", filled.Code, filled.Body.String())
+	}
+	var fillPayload struct {
+		Items []struct {
+			Title       string   `json:"title"`
+			Description string   `json:"description"`
+			Brand       string   `json:"brand"`
+			PriceText   string   `json:"price_text"`
+			ImageURLs   []string `json:"image_urls"`
+		} `json:"items"`
+	}
+	decodeData(t, filled.Body.Bytes(), &fillPayload)
+	if len(fillPayload.Items) != 1 || fillPayload.Items[0].Title != "Blue Mug" || fillPayload.Items[0].Description != "Holds coffee" || fillPayload.Items[0].Brand != "Acme" || fillPayload.Items[0].PriceText != "$12.00" || len(fillPayload.Items[0].ImageURLs) != 1 {
+		t.Fatalf("fill payload = %+v", fillPayload.Items)
+	}
 
 	categories := request(handler, http.MethodGet, "/api/categories", "", userCookie)
 	var categoryList struct {

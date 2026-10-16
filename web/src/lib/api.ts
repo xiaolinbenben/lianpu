@@ -117,3 +117,37 @@ export async function downloadExport(id: number, filename: string) {
 export function sendFeedback(content: string): Promise<Envelope<Record<string, never>>> {
   return request("/api/feedback", { method: "POST", body: JSON.stringify({ content }) });
 }
+
+export type SourceImportItem = {
+  id: number;
+  external_product_id: string;
+  attributes: { name: string; value_count: number }[];
+  sku_count: number;
+};
+
+export type VariantPlan = {
+  id: number;
+  external_product_id: string;
+  attributes: { name: string; labels: string[]; values: { value: string; image_url?: string }[] }[];
+  skus: { values: string[]; price: string; stock: number }[];
+  uniform: { price: string; stock: number } | null;
+};
+
+export function fetchVariantPlan(): Promise<Envelope<VariantPlan>> {
+  return request("/api/source-products/variant-plan", { method: "POST", body: "{}" });
+}
+
+export async function importSourceSheet(file: File): Promise<Envelope<{ items: SourceImportItem[] }>> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch("/api/source-products/import", {
+    method: "POST",
+    credentials: "same-origin",
+    body,
+  });
+  const payload = (await response.json()) as Envelope<{ items: SourceImportItem[] }>;
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.message || "上传失败");
+  }
+  return payload;
+}

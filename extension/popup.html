@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>链铺上架</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <h1>链铺上架</h1>
+      <p class="hint">登录后，在卖家中心的添加商品页使用右侧面板。店铺 Cookie 留在这个窗口。</p>
+      <form id="login">
+        <label>链铺地址<input id="base" type="url" placeholder="https://你的域名" required /></label>
+        <label>邮箱<input id="email" type="email" autocomplete="username" required /></label>
+        <label>密码<input id="password" type="password" autocomplete="current-password" required /></label>
+        <button id="submit" type="submit">登录</button>
+      </form>
+      <p id="session" hidden></p>
+      <button id="logout" type="button" hidden>退出登录</button>
+      <p id="message" role="status"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

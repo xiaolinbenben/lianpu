@@ -76,6 +76,7 @@ func Migrate(db *gorm.DB) error {
 		&model.ExportColumn{},
 		&model.Feedback{},
 		&model.ExportFile{},
+		&model.SourceProduct{},
 	); err != nil {
 		return err
 	}
